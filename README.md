@@ -37,7 +37,7 @@ Run the helper script as follows:
 ```
 ./RIFTT_part2.sh
 ```
-# Build the RIFTT Singularity container by yourself
+# Build the RIFTT Singularity container on your own
 ```
 git clone https://github.com/pkerbs/RIFTT.git <folder>
 cd <folder>
