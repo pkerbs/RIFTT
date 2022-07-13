@@ -1,0 +1,174 @@
+Bootstrap: debootstrap
+OSVersion: focal
+MirrorURL: http://us.archive.ubuntu.com/ubuntu/
+Include: apt
+
+%post
+	mkdir /tools
+	mkdir /fcdata
+	mkdir /star_index
+	mkdir /outputfolder
+	touch /genome.fa
+	touch /anno.gtf
+	touch /read1.fastq.gz
+	touch /read2.fastq.gz
+	touch /clintable.xlsx
+	touch /blacklist_user.xlsx
+	
+	apt-get install -y apt-utils
+	apt-get install -y locales
+	locale-gen en_US.UTF-8
+	export LANG=en_US.UTF-8
+	apt-get install -y software-properties-common
+	apt-get update
+	add-apt-repository universe
+	add-apt-repository multiverse
+	apt-key adv --keyserver keyserver.ubuntu.com --recv-keys E298A3A825C0D65DFD57CBB651716619E084DAB9
+	add-apt-repository 'deb https://cloud.r-project.org/bin/linux/ubuntu focal-cran40/'
+	apt-get update
+	apt-get install -y gzip
+	apt-get install -y unzip
+	apt-get install -y tar
+	apt-get install -y wget
+	apt-get install -y make
+	apt-get install -y gcc
+	apt-get install -y pigz
+	apt-get install -y libpng-dev
+	apt-get install -y python2
+	apt-get install -y python2-dev
+	ln -s /usr/bin/python2 /usr/bin/python
+	wget https://bootstrap.pypa.io/pip/2.7/get-pip.py -O /tools/get-pip.py
+	python /tools/get-pip.py
+	rm /tools/get-pip.py
+	pip2 install biopython==1.76
+	apt-get install -y r-base
+	apt-get install -y libxml2-dev
+	apt-get install -y libssl-dev
+	apt-get install -y parallel
+	apt-get install -y pandoc
+	apt-get install -y libcurl4-openssl-dev
+	apt-get install -y default-jre
+	apt-get install -y libgd3
+	apt-get install -y libgd-dev
+	cpan Math::Round Font::TTF::Font GD::Polyline List::MoreUtils Math::Bezier Readonly SVG Math::VecStat
+	cpan GD Clone Regexp::Common GD::Polyline Text::Format Set::IntSpan Statistics::Basic Params::Validate Config::General
+	Rscript /scripts/Rscripts/installrequiredRpackages.R
+		
+	cd /tools
+	wget -O samtools.tar.bz2 https://github.com/samtools/samtools/releases/download/1.14/samtools-1.14.tar.bz2
+	bunzip2 samtools.tar.bz2
+	tar xf samtools.tar
+	rm samtools.tar
+	cd samtools-1.14
+	make
+	make install
+	cd ..
+	
+	wget -O arriba.tar.gz https://github.com/suhrig/arriba/releases/download/v2.2.1/arriba_v2.2.1.tar.gz
+	tar xzf arriba.tar.gz
+	rm arriba.tar.gz
+	#sed -i 's#--outStd BAM_Unsorted#--outStd BAM_Unsorted --outFileNamePrefix "$mapbase/$sample_name/" --outTmpDir "$mapbase/$sample_name/"STARtemp#g' /tools/arriba_v2.2.1/run_arriba.sh
+	#sed -i 's#NoSharedMemory#NoSharedMemory --sjdbGTFfile "$ANNOTATION_GTF" --sjdbOverhang "$overhang"#g' /tools/arriba_v2.2.1/run_arriba.sh
+	#sed -i 's#-o fusions#-o "$arbase/$sample_name"/fusions#g' /tools/arriba_v2.2.1/run_arriba.sh
+	#sed -i 's#-O fusions#-O "$arbase/$sample_name"/fusions#g' /tools/arriba_v2.2.1/run_arriba.sh
+	#sed -i 's#Aligned#"$mapbase/$sample_name/$sample_name"#g' /tools/arriba_v2.2.1/run_arriba.sh
+	#sed -i 's#.sortedByCoord.out##g' /tools/arriba_v2.2.1/run_arriba.sh
+	#sed -i 's#-m $((40000/THREADS))M#-m 1G#g' /tools/arriba_v2.2.1/run_arriba.sh
+	#sed -i 's#-T tmp#-T "$mapbase/$sample_name/$sample_name".tmp#g' /tools/arriba_v2.2.1/run_arriba.sh
+	
+	wget -O fusioncatcher.tar.gz https://github.com/ndaniel/fusioncatcher/archive/refs/tags/1.33.tar.gz
+	tar xzf fusioncatcher.tar.gz 
+	rm fusioncatcher.tar.gz
+	sed -i 's/2.7.2b/2.7.10a/g' /tools/fusioncatcher-1.33/bin/fusioncatcher.py
+	
+	wget -O picard.jar https://github.com/broadinstitute/picard/releases/download/2.25.5/picard.jar
+	mkdir /tools/picard
+	mv /tools/picard.jar /tools/picard
+	
+	
+	wget -O bowtie.zip https://github.com/BenLangmead/bowtie/releases/download/v1.2.3/bowtie-1.2.3-linux-x86_64.zip
+	unzip bowtie.zip -d /tools
+	rm bowtie.zip
+	
+	wget -O bowtie2.zip https://github.com/BenLangmead/bowtie2/releases/download/v2.3.5.1/bowtie2-2.3.5.1-linux-x86_64.zip
+	unzip bowtie2.zip -d /tools
+	rm bowtie2.zip
+	
+	wget -O seqtk.tar.gz https://github.com/ndaniel/seqtk/archive/refs/tags/1.2-r101c.tar.gz
+	tar xzf seqtk.tar.gz 
+	rm seqtk.tar.gz
+	cd seqtk-1.2-r101c
+	make
+	cd ..
+	
+	wget -O fastqtk.tar.gz https://github.com/ndaniel/fastqtk/archive/refs/tags/v0.27.tar.gz
+	tar xzf fastqtk.tar.gz 
+	rm fastqtk.tar.gz
+	cd fastqtk-0.27
+	make
+	cd ..
+	
+	wget -O star.tar.gz https://github.com/alexdobin/STAR/archive/refs/tags/2.7.10a.tar.gz
+	tar xzf star.tar.gz 
+	rm star.tar.gz
+	
+	wget -O bbmap.tar.gz https://downloads.sourceforge.net/project/bbmap/BBMap_38.96.tar.gz
+	tar xzf bbmap.tar.gz 
+	rm bbmap.tar.gz
+	sed -i 's/38.44/38.96/g' /tools/fusioncatcher-1.33/bin/fusioncatcher.py
+	
+	wget -O blat.zip https://users.soe.ucsc.edu/~kent/src/blatSrc35.zip
+	unzip blat.zip
+	rm blat.zip
+	
+	MACHTYPE=x86_64
+	export MACHTYPE
+	mkdir /home/bin
+	mkdir /home/bin/$MACHTYPE
+	mkdir /tools/blat
+	HOME=/home
+	export HOME
+	cd blatSrc
+	make
+	mv /home/bin/$MACHTYPE/* /tools/blat
+	cd ..
+	rm -Rf /tools/blatSrc
+	wget http://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/liftOver
+	chmod +x liftOver
+	mv liftOver /tools/blat
+
+	wget -O subread.tar.gz https://nav.dl.sourceforge.net/project/subread/subread-2.0.3/subread-2.0.3-Linux-x86_64.tar.gz
+	tar xzf subread.tar.gz
+	rm subread.tar.gz
+		
+	wget http://opengene.org/fastp/fastp.0.23.1
+	chmod a+x ./fastp.0.23.1
+	
+	wget -O circos.tgz http://circos.ca/distribution/circos-0.69-9.tgz
+	tar xzf circos.tgz
+	chmod +x circos-0.69-9/bin/circos*
+	rm circos.tgz
+	
+%files
+	/data/local/user/pkerbs/singularity_dev/scripts /
+
+%environment
+	
+%runscript
+	/scripts/pipeline.sh
+	
+%help
+	This executes Part1 of the RIFTT pipeline.
+	Usage:
+	singularity run --bind <reference file>:/genome.fa,
+	<annotation file>:/anno.gtf,
+	<starindex folder>:/star_index,
+	<path to FusionCatcher data folder>:/fcdata,
+	<path to outputfolder>:/outputfolder,
+	<read1 compressed fastq file>:/read1.fastq.gz,
+	<read2 compressed fastq file>:/read2.fastq.gz
+	--env sample_name=<name of sample>,
+	strandness=<0 or 1 or 2>,
+	threads=<number of threads>,
+	genomebuild=<hg19 or hg38>,
+	tasks=<1 1 1 1 1 1> RIFTT.sif
