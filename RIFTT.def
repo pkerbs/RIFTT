@@ -150,7 +150,7 @@ Include: apt
 	rm circos.tgz
 	
 %files
-	/data/local/user/pkerbs/singularity_dev/scripts /
+	./scripts /
 
 %environment
 	
