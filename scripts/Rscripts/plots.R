@@ -1,10 +1,10 @@
 # Promiscuity Score violin plot
-ps_violinplot <- function(rt,BLpassIdx,outfile){
+ps_violinplot <- function(rt,outfile){
   require(ggplot2)
   marg <- margin(2,2,2,2,"mm")
   y_breaks <- c(0,1,2,4,6,8,10,seq(20,100,20),seq(200,1000,100))
   
-  tfp <- rt[BLpassIdx,]
+  tfp <- rt[rt$passBL,]
   tfp <- tfp[!duplicated(tfp[,c("sample","label")]),]
   num_cohorts <- length(unique(tfp$cohort))
   
@@ -14,7 +14,7 @@ ps_violinplot <- function(rt,BLpassIdx,outfile){
                  alpha=0.5, show.legend = F) +
     theme_minimal() +
     facet_wrap(~cohort,nrow = 1,strip.position = "bottom") +
-    theme(legend.position = c(0.2/(num_cohorts-1),0.97),
+    theme(legend.position = c(0.2/(num_cohorts-0.999),0.97),
           legend.key.size = unit(0.5,"line"),
           legend.text = element_text(size = 6),
           legend.title = element_text(size = 6, face="bold"),
@@ -246,7 +246,7 @@ create_TPM_FTS_plotly <- function(rt){
 oncoprint <- function(outfile){
   if(all(is.na(clintable$Karyotype) | clintable$Karyotype == "") 
      | all(is.na(clintable$otherCyto) | clintable$otherCyto == "")){
-    cat("    ",yellow("->")," No karyotype / molecular diagnostics information in clinical table. Oncoprint will be skipped.",sep="")
+    cat("\n    ",yellow("->")," No karyotype / molecular diagnostics information in clinical table. Oncoprint will be skipped.",sep="")
     return()
   }
   
@@ -384,15 +384,15 @@ oncoprint <- function(outfile){
                                                                            col=NA),
                                                                  labels = fus_anno,
                                                                  labels_gp = gpar(fontsize=16,col="black"),
-                                                                 labels_rot = 0),
+                                                                 labels_rot = 0, labels_just = "right",
+                                                                 labels_offset = unit(0.95, "npc"),
+                                                                 width = unit(100, "mm")),
                                                Method=row_labels,
-                                               annotation_legend_param = list(
-                                                 Method = c(legend_param,nrow=3)),
+                                               annotation_legend_param = list(Method = c(legend_param,nrow=3)),
                                                col=list(Method=c("Karyotyping"="#283b42",
                                                                  "MDx"="#1d6a96",
                                                                  "RNA-seq"="#85b8cb")),
-                                               show_annotation_name = F,
-                                               annotation_width=unit(c(4.9,0.3),"cm")),
+                                               show_annotation_name = F),
                column_order = col_order,
                show_row_names = F, column_names_gp = gpar(fontsize = 10),
                heatmap_legend_param = c(list(title = "Evidence",
@@ -434,13 +434,10 @@ oncoprint <- function(outfile){
 # "known" = Known or Unknown fusion event. Known if found recurrently in ChimerDB and annotated as experimentally verified
 # "rec" = Recurrence of the fusion in the cohort
 # "mitelman_rec" = Recurrence of the fusion in the MitelmanDB
-  circosPlotsCandidates <- function(rt,ch,status){
-    evidenceRange <- c(3:6)
-    if(status=="unknown") evidenceRange <- c(6)
-    rt <- subset(rt,known==status
-                 & ev_level %in% evidenceRange
-                 & cohort==ch
-                 & reciprocal==F)
+  circosPlotsCandidates <- function(rt){
+    ch <- rt$cohort[1]
+    status <- rt$known[1]
+    
     rt <- distinct(rt,sample,label,.keep_all = T)
     
     links <- rt %>%

@@ -11,9 +11,9 @@
   
   # Load required packages
     list.of.packages <- c("openxlsx","dplyr","stringr",
-                          "reshape2","ggplot2","grid","plotly",
-                          "htmlwidgets","scales","future.apply",
-                          "withr","Rsubread","data.table","ComplexHeatmap")
+                          "ggplot2","grid","plotly",
+                          "htmlwidgets","scales","withr",
+                          "data.table","ComplexHeatmap")
     # bioconductor.packages <- c("biomaRt")
     # list.of.packages <- c(list.of.packages,bioconductor.packages)
     for(p in list.of.packages){
@@ -32,12 +32,7 @@
       mutate(across(everything(), as.character))
     arguments <- commandArgs(trailingOnly = T)
     resultfolder <- normalizePath(arguments[1])
-    debug_flag <- as.numeric(arguments[2])
-    internal_BL <- as.numeric(arguments[3])
-    threads <- as.numeric(arguments[4])
-    
-    # TODO: Implement parameter in FP_filter.sh
-        cohort_flag <- T   
+    internal_BL <- as.numeric(arguments[2])
   cat(" ",green("\u2713"),"\n",sep="")
   
   # Calculate gene lengths from annotation file (printGeneLengths.jar)
@@ -52,9 +47,7 @@
   # Import all scripts in base directory
     scripts <- c("checkForFiles.R",
                  "importFusionDBs.R",
-                 "hgncSymbols.R",
                  "handleCallerResults.R",
-                 "importCounts.R",
                  "calcScores.R",
                  "dupsBetweenGroups.R",
                  "plots.R"
@@ -87,20 +80,25 @@
                               gene2=character(),
                               break5prime=character(),
                               break3prime=character(),
-                              cov=integer(), stringsAsFactors = F
+                              cov=integer(),
+                              passCallFilt=logical(), stringsAsFactors = F
     )
-    filtered_AR <- filterResults(AR_results,"AR")
-    resultTable <- rbind(resultTable,filtered_AR, stringsAsFactors = F)
-    filtered_FC <- filterResults(FC_results,"FC")
-    resultTable <- rbind(resultTable,filtered_FC, stringsAsFactors = F)
+    AR_results <- applyCallerFilter(AR_results,"AR")
+    FC_results <- applyCallerFilter(FC_results,"FC")
+    temp1 <- AR_results[,match(c("cohort","sample","caller","gene1","gene2","break5prime","break3prime","cov","passCallFilt"),colnames(AR_results))]
+    temp2 <- FC_results[,match(c("cohort","sample","caller","gene1","gene2","break5prime","break3prime","cov","passCallFilt"),colnames(FC_results))]
+    resultTable <- rbind(temp1,temp2)
+    rm(temp1,temp2)
     
     # Define genelabels
     # In case of intergenic breakpoint:
-    # Remove "(distance from flanking gene)", Convert "IGHx" names to "IGH"
+    # Remove "(distance from flanking gene)", Convert "IGHx" names to "IGH", Convert "TR[ABCD]x" names to "TR[ABCD]"
       genes1 <- gsub("\\(\\d+\\)","",resultTable$gene1)
       genes1 <- gsub("^IGH.*","IGH",genes1)
+      genes1 <- gsub("(^TR[ABCD]).*","\\1",genes1)
       genes2 <- gsub("\\(\\d+\\)","",resultTable$gene2)
       genes2 <- gsub("^IGH.*","IGH",genes2)
+      genes2 <- gsub("(^TR[ABCD]).*","\\1",genes2)
       resultTable$label <- paste0(genes1,"::",genes2)
       resultTable$reciproc_label <- paste0(genes2,"::",genes1)
   cat(" ",green("\u2713"),"\n",sep="")
@@ -211,72 +209,41 @@
 
 # CALCULATE PROMISCUITY SCORE
   cat("  ",yellow("->")," Calculate Promiscuity Scores...",sep="")
-  # Determine Promiscuity Score for every cohort individually. Else -> don't distinguish between cohorts
-  if(cohort_flag){
-    temp <- data.frame(cohort=character(),
-                       sample=character(),
-                       caller=character(),
-                       gene1=character(),
-                       gene2=character(),
-                       break5prime=character(),
-                       break3prime=character(),
-                       cov=integer(),
-                       label=character(),
-                       known=character(),
-                       reciprocal=logical(),
-                       karyo=character(),
-                       mol=character(),
-                       PS=numeric(), stringsAsFactors = F)
-    for(ch in unique(resultTable$cohort)){
-        temp <- rbind(temp,addPSToTable(resultTable[resultTable$cohort==ch,]))
-    }
-    resultTable <- temp
-  } else {
-    resultTable <- addPSToTable(resultTable)
-  }
+    promiscuity <- calcPromiscuity(resultTable)
+    resultTable$PS <- unlist(apply(resultTable,1,function(x){
+      gene1_temp <- (promiscuity[[x["gene1"]]]["AR_promiscuity"] + promiscuity[[x["gene1"]]]["FC_promiscuity"])/2
+      gene2_temp <- (promiscuity[[x["gene2"]]]["AR_promiscuity"] + promiscuity[[x["gene2"]]]["FC_promiscuity"])/2
+      PS <- (gene1_temp + gene2_temp)/2
+      return(PS)
+    }))
   cat(" ",green("\u2713"),"\n",sep="")
 #------------------------------------------------------------------------------------------------------------
 
-# CALCULATE TPM and FTS
-  cat("  ",yellow("->")," Import read counts...",sep="")
-    rawcounts <- getRawCounts(paste0(outputfolder,"/featurecounts/reformatted/"))
-  cat(" ",green("\u2713"),"\n",sep="")
-  
-  # Read in median insert sizes
-  cat("  ",yellow("->")," Import estimated insert sizes...",sep="")
-    inserts <- data.frame(sample=character(),insert=numeric(),stringsAsFactors = F)
-    for(s in clintable$sample){
-      conn <- file(paste0(outputfolder,"/insertsizes/",s,"_is_metrics.txt"), "r")
-      i <- 1
-      while(length(line <- readLines(conn, 1)) > 0) {
-        if(i==8) break
-        i <- i+1
-      }
-      close(conn)
-      insert <- unlist(strsplit(line,"\t"))[1]
-      inserts[nrow(inserts)+1,] <- data.frame(sample=s,insert=insert,stringsAsFactors = F)
-      inserts$insert <- as.numeric(inserts$insert)
-    }
-  cat(" ",green("\u2713"),"\n",sep="")
-  #----------------------------
-
+# CALCULATE FUSION TRANSCRIPT SCORE
   cat("  ",yellow("->")," Calculate Fusion Transcript Scores...",sep="")
-    # Run samples in parallel using future package
-      run_order <- resultTable %>%
-        group_by(sample) %>%
-        summarise(num_pos=length(unique(c(break5prime,break3prime)))) %>%
-        arrange(desc(num_pos))
-      run_order <- zigzag_sort(run_order$sample, threads/2)
-      
-      future::plan("future::multisession", workers = threads/2)
-      breakpoint_counts <- future.apply::future_lapply(run_order,
-                                                       getBreakpointRegionCounts, 
-                                                       future.seed= NULL)
-      future::plan("sequential")
-      names(breakpoint_counts) <- run_order
+    # Read in median insert sizes
+      inserts <- data.frame(sample=character(),insert=numeric(),stringsAsFactors = F)
+      for(s in clintable$sample){
+        conn <- file(paste0(outputfolder,"/insertsizes/",s,"_is_metrics.txt"), "r")
+        i <- 1
+        while(length(line <- readLines(conn, 1)) > 0) {
+          if(i==8) break
+          i <- i+1
+        }
+        close(conn)
+        insert <- unlist(strsplit(line,"\t"))[1]
+        inserts[nrow(inserts)+1,] <- data.frame(sample=s,insert=insert,stringsAsFactors = F)
+        inserts$insert <- as.numeric(inserts$insert)
+      }
+  
+    # Import counts
+      readcounts <- list()
+      for(s in clintable$sample){
+        readcounts[[s]] <- readRDS(paste0(outputfolder,"/featurecounts/",s,"_counts.RDS"))
+      }
 
     # Fill resultTable with TPM values of breakpoint counts
-      rpkMatrix <- calcRPKMatrix(rawcounts,genelengths)
+      rpkMatrix <- calcRPKMatrix(readcounts,genelengths)
       temp <- apply(resultTable,1,function(x){
         s <- x['sample']
         break5prime <- x['break5prime']
@@ -284,77 +251,62 @@
         fusion_coverage <- as.numeric(x['cov'])
         insertsize <- inserts$insert[inserts$sample==s]
         totalrpk <- sum(rpkMatrix[,colnames(rpkMatrix)==s])
-        tpm5prime <- calcTPM(breakpoint_counts[[s]]$break5prime[break5prime],insertsize,totalrpk)
-        tpm3prime <- calcTPM(breakpoint_counts[[s]]$break3prime[break3prime],insertsize,totalrpk)
+        tpm5prime <- calcTPM(readcounts[[s]]$break5prime[break5prime],insertsize,totalrpk)
+        tpm3prime <- calcTPM(readcounts[[s]]$break3prime[break3prime],insertsize,totalrpk)
         tpmfusion <- calcTPM(fusion_coverage,insertsize,totalrpk)
         c(tpm5prime, tpm3prime, tpmfusion)
       })
-      resultTable$tpm5prime_new <- temp[1,]
-      resultTable$tpm3prime_new <- temp[2,]
-      resultTable$tpmfusion_new <- temp[3,]
-      resultTable$FTS5 <- resultTable$tpmfusion_new/(resultTable$tpmfusion_new+resultTable$tpm5prime_new)
-      resultTable$FTS3 <- resultTable$tpmfusion_new/(resultTable$tpmfusion_new+resultTable$tpm3prime_new)
+      resultTable$tpm5prime <- temp[1,]
+      resultTable$tpm3prime <- temp[2,]
+      resultTable$tpmfusion <- temp[3,]
+      resultTable$FTS5 <- resultTable$tpmfusion/(resultTable$tpmfusion+resultTable$tpm5prime)
+      resultTable$FTS3 <- resultTable$tpmfusion/(resultTable$tpmfusion+resultTable$tpm3prime)
       resultTable$FTS <- (resultTable$FTS5+resultTable$FTS3)/2
    cat(" ",green("\u2713"),"\n",sep="")
 #------------------------------------------------------------------------------------------------------------
 
 # FILTERS
-  # Fusion events that passed built-in filters of the callers
-  # -> Evidence level 1
-    resultTable$ev_level <- 1
-  
-  # BLACKLIST
-  # Fusion events that were not detected in healthy samples
-    BLpassIdx <- !resultTable$label %in% blacklist
-    resultTable$ev_level[BLpassIdx] <- resultTable$ev_level[BLpassIdx] + 1
-  # //DEPRECATED resultTable$ev_level[!resultTable$label %in% blacklist] <- 2
+   # Fusion events that passed built-in filters of the callers
+   # -> Evidence level 1
+   resultTable$ev_level <- 0
+   resultTable$ev_level[resultTable$passCallFilt] <- resultTable$ev_level[resultTable$passCallFilt] + 1
+   
+   # BLACKLIST
+   # Fusion events that were not detected in healthy samples
+   BLpassIdx <- !paste0(resultTable$gene1,"::",resultTable$gene2) %in% blacklist
+   resultTable$ev_level[BLpassIdx] <- resultTable$ev_level[BLpassIdx] + 1
+   
+   # PS
+   # Fusion events with lower PS than highest PS of known fusions among all samples
+   # If there are too few samples harboring known fusions or too few samples
+   # analyzed by this filter pipeline, no reasonable PS will be determined.
+   # Therefore, maxPS is adjusted to a conservative value of 2.
+   temp <- resultTable$PS[resultTable$known=="known"]
+   if(length(temp)==0 || sum(temp) < 2){
+     maxPS <- 2
+     }else{
+       maxPS <- max(temp)
+       }
+   PSpassIdx <- resultTable$PS <= maxPS
+   resultTable$ev_level[PSpassIdx] <- resultTable$ev_level[PSpassIdx] + 1
 
-  # PS
-  # Fusion events with lower PS than highest PS of known fusions among all samples
-    temp <- resultTable$PS[resultTable$known=="known"]
-    if(isEmpty(temp) || sum(temp) < 2){
-      # If there are too few samples harboring known fusions or too few samples
-      # analyzed by this filter pipeline, no reasonable PS will be determined.
-      # Therefore, maxPS is adjusted to a conservative value of 2.
-      maxPS <- 2
-    }else{
-        maxPS <- max(temp)
-    }
-    resultTable$ev_level[resultTable$PS <= maxPS] <- resultTable$ev_level[resultTable$PS <= maxPS] + 1
-    # //DEPRECATED resultTable$ev_level[resultTable$ev_level==2
-    #                                   & resultTable$PS <= maxPS] <- 3
-  
   # FTS
-  # Known fusions are generally regarded as highly relevant
-  # and are not affected by the FTS. Revision may be required.
-    # resultTable$ev_level[resultTable$known=="known"] <- resultTable$ev_level[resultTable$known=="known"]+1
-    # //DEPRECATED resultTable$ev_level[resultTable$known=="known"] <- 4
-  
-  # Unknown fusion events are filtered by
   # 1. FTS of the 5' and 3' partner gene should be at least 0.025, which translates
   # to a relative abundance of 5% of the fusion harboring clone in a bulk RNA-seq sample
   # under the assumption of a monoallelic occurrence of the fusion.
   # 2. FTS of the 5' and 3' partner gene should be less than 1, since these events
   # suggest that there is no transcription of the single partner genes of a fusion
   # although there are fusion transcript supporting reads, which is highly unlikely.
-  # 3. Mean FTS >= 0.1
     FTSpassIdx <- which(resultTable$FTS5 >= 0.025 & resultTable$FTS3 >= 0.025
                         & resultTable$FTS5 < 1 & resultTable$FTS3 < 1
                         & resultTable$FTS >= 0.05)
     resultTable$ev_level[FTSpassIdx] <- resultTable$ev_level[FTSpassIdx] + 1
-    # //DEPRECATED:
-    # resultTable$ev_level[resultTable$ev_level == 3
-    # & resultTable$known=="unknown"
-    # & resultTable$FTS5 >= 0.025 & resultTable$FTS3 >= 0.025
-    # & resultTable$FTS5 < 1 & resultTable$FTS3 < 1
-    # & resultTable$FTS >= 0.1
-    # ] <- 4
-  
+
   # RS
   cat("  ",yellow("->")," Calculate Robustness Scores...",sep="")
     resultTable <- addRSToTable(resultTable,FTSpassIdx)
-    resultTable$ev_level[resultTable$RS >= 0.5] <- resultTable$ev_level[resultTable$RS >= 0.5] + 1
-    # //DEPRECATED resultTable$ev_level[resultTable$ev_level==4 & resultTable$RS >= 0.5] <- 5
+    RSpassIdx <- resultTable$RS >= 0.5
+    resultTable$ev_level[RSpassIdx] <- resultTable$ev_level[RSpassIdx] + 1
   cat(" ",green("\u2713"),"\n",sep="")
 #----------------------------
 
@@ -365,43 +317,65 @@
     resultTable$callerOverlap <- dupsBetweenGroups(rt_temp,"caller")
     rm(rt_temp)
     resultTable$ev_level[resultTable$callerOverlap == T] <- resultTable$ev_level[resultTable$callerOverlap == T] + 1
-    # //DEPRECATED resultTable$ev_level[resultTable$ev_level==5 & resultTable$callerOverlap == T] <- 6
   cat(" ",green("\u2713"),"\n",sep="")
 #------------------------------------------------------------------------------------------------------------
 
 # OUTPUT RESULTS AND PLOTS
-  dir.create(paste0(resultfolder,"/plots"),showWarnings = T,recursive = F)
+  cat("  ",yellow("->")," Write result table...",sep="")
+  resultTable$passBL <- F
+  resultTable$passBL[BLpassIdx] <- T
+  resultTable$passPS <- F
+  resultTable$passPS[PSpassIdx] <- T
+  resultTable$passFTS <- F
+  resultTable$passFTS[FTSpassIdx] <- T
+  resultTable$passRS <- F
+  resultTable$passRS[RSpassIdx] <- T
+  colOrder <- c("cohort","sample","caller","gene1","gene2","label","reciprocal",
+                "break5prime","break3prime","cov","known","mitelman_rec","PS",
+                "tpm5prime","tpm3prime","tpmfusion","FTS5","FTS3","FTS","RS","ev_level",
+                "passCallFilt","passBL","passPS","passFTS","passRS","callerOverlap","karyo","mol")
+  colOrderIdx <- match(colOrder,colnames(resultTable))
+  resultTable <- resultTable[,colOrderIdx]
+  rowOrderIdx <- order(resultTable$known,-resultTable$ev_level)
+  resultTable <- resultTable[rowOrderIdx,]
+  
+  # Fusion events are often reported several times (e.g. with different breakpoints)
+  # Select the fusion event with the highest evidence level
+  resultTable <- resultTable[!duplicated(resultTable[,c("sample","caller","label")]),]
+  write.xlsx(resultTable,paste0(resultfolder,"/resultTable.xlsx"))
+  # Create R workspace
+  save.image(paste0(resultfolder,"/filterrun.RData"))
+  
+  cat(" ",green("\u2713"),"\n",sep="")
   
   # Generate plots
+  dir.create(paste0(resultfolder,"/plots"),showWarnings = T,recursive = F)
   cat("  ",yellow("->")," Generate plots...",sep="")
-    ps_violinplot(resultTable,BLpassIdx,paste0(resultfolder,"/plots/Violinplot_PS.png"))
+    ps_violinplot(resultTable,paste0(resultfolder,"/plots/Violinplot_PS.png"))
     
     fts_violinplot(resultTable,paste0(resultfolder,"/plots/Violinplot_FTS.png"))
     
     saveWidget(create_TPM_FTS_plotly(resultTable),paste0(resultfolder,"/plots/TPM-FTS_3D_plot.html"))
     
     invisible(oncoprint(paste0(resultfolder,"/plots/Oncoprint_Karyo_MDx_RNAseq.png")))
-    # png(paste0(resultfolder,"/plots/barplot_excluded_fusions.png"),width=7,height=9,res=600,units="cm")
-    #   filterBarplot(resultTable,AR_results,FC_results)
-    # invisible(dev.off()) 
-    
+
     for(ch in unique(resultTable$cohort)){
-      circosPlotsCandidates(resultTable,ch,"known")
-      circosPlotsCandidates(resultTable,ch,"unknown")
+      rt <- subset(resultTable,known=="known"
+                   & ev_level %in% c(3:6)
+                   & cohort==ch
+                   & reciprocal==F)
+      if(nrow(rt)==0){
+        cat("\n    ",yellow("->")," There are no known fusions in the '",ch,"' cohort. Circos plot skipped.",sep="")
+      } else{circosPlotsCandidates(rt)}
+      
+      rt <- subset(resultTable,known=="unknown"
+                   & ev_level %in% c(6)
+                   & cohort==ch
+                   & reciprocal==F)
+      if(nrow(rt)==0){
+        cat("\n    ",yellow("->")," There are no robust fusion candidates in the '",ch,"' cohort. Circos plot skipped.",sep="")
+      } else{circosPlotsCandidates(rt)}
     }
     
-  cat(" ",green("\u2713"),"\n",sep="")
-  
-  cat("  ",yellow("->")," Write result table...",sep="")
-    OrderIdx <- order(resultTable$known,-resultTable$ev_level)
-    resultTable <- resultTable[OrderIdx,]
-    # Fusion events are often reported several times (e.g. with different breakpoints)
-    # Select the fusion event with the highest evidence level
-    resultTable <- resultTable[!duplicated(resultTable[,c("sample","caller","label")]),]
-    write.xlsx(resultTable,paste0(resultfolder,"/resultTable.xlsx"))
-    # Create R workspace (only if debug flag is set)
-    if(as.logical(debug_flag)){
-      save.image(paste0(resultfolder,"/filterrun.RData"))
-    }
   cat(" ",green("\u2713"),"\n",sep="")
 #------------------------------------------------------------------------------------------------------------

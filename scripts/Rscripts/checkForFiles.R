@@ -14,10 +14,10 @@
         break
       }
     # check featurecounts
-      if(!file.exists(paste0(outputfolder,"/featurecounts/reformatted/",s,".fc"))
-         || file.size(paste0(outputfolder,"/featurecounts/reformatted/",s,".fc")) < 1000){
+      if(!file.exists(paste0(outputfolder,"/featurecounts/",s,"_counts.RDS"))
+         || file.size(paste0(outputfolder,"/featurecounts/",s,"_counts.RDS")) < 1000){
         file_missing <- T
-        cat(red("ERROR: "),"Missing or truncated file \".../featurecounts/reformatted/",s,".fc\"\n",sep="")
+        cat(red("ERROR: "),"Missing or truncated file \".../featurecounts/",s,"_counts.RDS\"\n",sep="")
         break
       }
     # check insertsizes

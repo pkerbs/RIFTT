@@ -55,18 +55,15 @@ run="$(date +"%Y-%m-%d_%H-%M-%S")"
 	fi
 #----------------------
 
-# FEATURECOUNTS
-	if [[ ${steps[4]} -eq 1 ]]; then
-		logfile="$outputfolder/pipeline_logs/$sample_name"_"$run"_featurecounts.log
-		/scripts/featurecounts.sh >"$logfile" 2>&1 &
-	fi
-#----------------------
-
 # INSERT SIZE ESTIMATION
 	if [[ ${steps[5]} -eq 1 ]]; then
 		logfile="$outputfolder/pipeline_logs/$sample_name"_"$run"_insertsize.log
 		/scripts/insertsize.sh >"$logfile" 2>&1
 	fi
 #----------------------
-
 wait # wait for everything to finish
+
+# FEATURECOUNTS (get fragment counts near breakpoints)
+	mkdir -p "$featCbase"
+	Rscript /scripts/Rscripts/featurecounts.R "$sample_name" "$anno" "$threads"
+#----------------------

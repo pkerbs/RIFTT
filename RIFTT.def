@@ -136,10 +136,6 @@ Include: apt
 	wget http://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/liftOver
 	chmod +x liftOver
 	mv liftOver /tools/blat
-
-	wget -O subread.tar.gz https://nav.dl.sourceforge.net/project/subread/subread-2.0.3/subread-2.0.3-Linux-x86_64.tar.gz
-	tar xzf subread.tar.gz
-	rm subread.tar.gz
 		
 	wget http://opengene.org/fastp/fastp.0.23.1
 	chmod a+x ./fastp.0.23.1

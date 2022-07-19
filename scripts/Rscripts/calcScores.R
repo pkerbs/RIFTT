@@ -1,30 +1,34 @@
-addPSToTable <- function(rt){
-  pl <- list()
-  pl <- data.frame("gene"=unique(c(rt$gene1,rt$gene2)),
-                         ar_num_partners=0,
-                         fc_num_partners=0,stringsAsFactors = F)
+calcPromiscuity <- function(rt){
+  genes <- unique(c(rt$gene1,rt$gene2))
+  genes <- genes[!duplicated(genes)]
   
-  for(j in 1:nrow(pl)){
-    partner <- c()
-    temp <- AR_results
-    partner <- c(partner,subset(temp,gene1==pl$gene[j])$gene2)
-    partner <- c(partner,subset(temp,gene2==pl$gene[j])$gene1)
-    partner <- unique(partner)
-    pl$ar_num_partners[j] <- length(partner)
-    partner <- c()
-    temp <- FC_results
-    partner <- c(partner,subset(temp,gene1==pl$gene[j])$gene2)
-    partner <- c(partner,subset(temp,gene2==pl$gene[j])$gene1)
-    partner <- unique(partner)
-    pl$fc_num_partners[j] <- length(partner)
-  }
-  pl$PS <- (pl$fc_num_partners + pl$ar_num_partners)/2
+  # For every gene count number of different partners
+  # Count only once if different partners reported but with the same breakpoint
+  promiscuity <- lapply(genes,function(x){
+    temp1 <- subset(rt,caller=="AR" & gene1==x)[,grepl("gene2|break3prime",colnames(rt))]
+    temp2 <- subset(rt,caller=="AR" & gene2==x)[,grepl("gene1|break5prime",colnames(rt))]
+    colnames(temp1) <- c("partner","breakpoint")
+    colnames(temp2) <- c("partner","breakpoint")
+    temp_merged <- rbind(temp1,temp2)
+    temp_merged <- temp_merged[!duplicated(temp_merged$partner),]
+    temp_merged <- temp_merged[!duplicated(temp_merged$breakpoint),]
+    ar_partner_num <- nrow(temp_merged)
     
-  rt$PS <- -1
-  for(i in 1:nrow(rt)){
-    rt$PS[i] <- (pl$PS[pl$gene==rt$gene1[i]] + pl$PS[pl$gene==rt$gene2[i]])/2
-  }
-  return(rt)
+    temp1 <- subset(rt,caller=="FC" & gene1==x)[,grepl("gene2|break3prime",colnames(rt))]
+    temp2 <- subset(rt,caller=="FC" & gene2==x)[,grepl("gene1|break5prime",colnames(rt))]
+    colnames(temp1) <- c("partner","breakpoint")
+    colnames(temp2) <- c("partner","breakpoint")
+    temp_merged <- rbind(temp1,temp2)
+    temp_merged <- temp_merged[!duplicated(temp_merged$partner),]
+    temp_merged <- temp_merged[!duplicated(temp_merged$breakpoint),]
+    fc_partner_num <- nrow(temp_merged)
+    
+    result <- c(ar_partner_num,fc_partner_num)
+    names(result) <- c("AR_promiscuity","FC_promiscuity")
+    return(result)
+  })
+  names(promiscuity) <- genes
+  return(promiscuity)
 }
 
 addRSToTable <- function(rt,FTSpassIdx){
@@ -65,42 +69,6 @@ addRSToTable <- function(rt,FTSpassIdx){
   return(rt)
 }
 
-# Count reads in a region using featureCounts
-getBreakpointRegionCounts <- function(s){
-  rt <- subset(resultTable,sample==s)
-  bampath <- paste0(outputfolder,"/mapping/",s,"/",s,".bam")
-  offset <- 5
-
-  # Define regions for counting based on strand and offset
-    break5regions <- cbind(paste0(rt$break5prime,"_5"),do.call(rbind.data.frame, strsplit(rt$break5prime,":")))
-    colnames(break5regions) <- c("GeneID","Chr","Start","Strand")
-    break5regions$Start[break5regions$Strand=="+"] <- as.numeric(break5regions$Start[break5regions$Strand=="+"]) - offset
-    break5regions$Start[break5regions$Strand=="-"] <- as.numeric(break5regions$Start[break5regions$Strand=="-"]) + offset
-    break5regions$End <- break5regions$Start
-    
-    break3regions <- cbind(paste0(rt$break3prime,"_3"),do.call(rbind.data.frame, strsplit(rt$break3prime,":")))
-    colnames(break3regions) <- c("GeneID","Chr","Start","Strand")
-    break3regions$Start[break3regions$Strand=="+"] <- as.numeric(break3regions$Start[break3regions$Strand=="+"]) + offset
-    break3regions$Start[break3regions$Strand=="-"] <- as.numeric(break3regions$Start[break3regions$Strand=="-"]) - offset
-    break3regions$End <- break3regions$Start
-    
-  # Perform featureCounts on region table
-    regions <- unique(rbind(break5regions,break3regions))
-    regions <- regions[,c(1:3,5,4)]
-    temp <- with_output_sink("/dev/null", featureCounts(files = bampath, annot.ext = regions, isPairedEnd = T, ignoreDup = T, 
-                                                        useMetaFeatures = F, allowMultiOverlap = T, countChimericFragments = F, 
-                                                        nthreads = 2, tmpDir = resultfolder))
-  
-  breakpoint_counts <- list()
-  idx5 <- grepl("_5",rownames(temp$counts))
-  breakpoint_counts[["break5prime"]] <- temp$counts[idx5,1]
-  names(breakpoint_counts[["break5prime"]]) <- gsub("_5","",rownames(temp$counts)[idx5])
-  idx3 <- grepl("_3",rownames(temp$counts))
-  breakpoint_counts[["break3prime"]] <- temp$counts[idx3,1]
-  names(breakpoint_counts[["break3prime"]]) <- gsub("_3","",rownames(temp$counts)[idx3])
-  return(breakpoint_counts)
-}
-
 calcTPM <- function(count,length,totalrpk){
   length <- length/1000
   rpk <- count/length
@@ -109,7 +77,10 @@ calcTPM <- function(count,length,totalrpk){
   return(tpm)
 }
 
-calcRPKMatrix <- function(c,gl){
+calcRPKMatrix <- function(readcounts,gl){
+  c <- do.call(cbind,lapply(readcounts,function(x){
+    x$allcounts
+  }))
   gl <- gl[match(rownames(c),gl$geneID),]
   gl$length <- gl$length/1000
   rpk <- sweep(c, MARGIN = 1, STATS = gl$length, FUN = '/')
@@ -121,11 +92,4 @@ calcTPMMatrix <- function(rpk){
   totalrpk <- totalrpk/1000000
   tpm <- sweep(rpk, MARGIN = 2, STATS = totalrpk, FUN = '/')
   return(tpm)
-}
-
-zigzag_sort <- function(x, cores){
-  sortvec <- rep(c(seq(1,cores),seq(cores, 1)), length = length(x))
-  sortvec <- order(sortvec)
-  x <- x[sortvec]
-  return(x)
 }

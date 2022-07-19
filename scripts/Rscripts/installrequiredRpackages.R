@@ -4,10 +4,10 @@
 # This line assures that libraries from the Singularity container are used instead.
   .libPaths("/usr/local/lib/R/site-library")
       
-list.of.packages <- c("BiocManager","openxlsx","dplyr",
-                      "stringr","reshape2","ggplot2","grid"
-                      "plotly","htmlwidgets","scales","crayon",
-                      "future.apply","withr","data.table","ComplexHeatMap")
+list.of.packages <- c("openxlsx","dplyr","stringr",
+                      "ggplot2","grid","plotly","crayon",
+                      "htmlwidgets","scales","withr",
+                      "data.table","ComplexHeatmap")
 bioconductor.packages <- c("Rsubread")
 # General packages
 new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]

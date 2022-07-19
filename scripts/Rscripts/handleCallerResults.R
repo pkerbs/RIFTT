@@ -1,7 +1,8 @@
 # Helper function for filtering by built-in filter of fusion callers
-filterResults <- function(fusionCalls_table,caller){
+applyCallerFilter <- function(fusionCalls_table,caller){
   minreads <- 3
-
+  fusionCalls_table$passCallFilt <- F
+  
   #FusionCatcher
   filterterms <- paste("(1000genomes",
                        "gap","gtex","partial","bodymap2","cacg","cortex","duplicates",
@@ -13,27 +14,23 @@ filterResults <- function(fusionCalls_table,caller){
                        "ucsc_same_strand_overlapping",
                        "pseudo)",sep="|")
   if(caller=="FC"){
-    keep <- c()
-    for(i in 1:nrow(fusionCalls_table)){
-      if(!grepl(filterterms,fusionCalls_table$Fusion_description[i]) 
-         & fusionCalls_table$cov[i] >= minreads
-         & fusionCalls_table$cov[i] > (2*fusionCalls_table$Counts_of_common_mapping_reads[i])){
-        keep <- c(keep,i)
-      }
-    }
-    temp <- fusionCalls_table[keep,]
+    tempidx <- which(!grepl(filterterms,fusionCalls_table$Fusion_description) 
+                 & fusionCalls_table$cov >= minreads
+                 & fusionCalls_table$cov > (2*fusionCalls_table$Counts_of_common_mapping_reads))
+    fusionCalls_table$passCallFilt[tempidx] <- T
   }
+  
   #Arriba
   else if(caller=="AR"){
-    temp <- subset(fusionCalls_table,confidence %in% c("medium","high") & cov>=minreads)
+    tempidx <- which(fusionCalls_table$confidence %in% c("medium","high") & fusionCalls_table$cov>=minreads)
+    fusionCalls_table$passCallFilt[tempidx] <- T
   }
-  temp$caller <- caller
-  return(temp[,match(c("cohort","sample","caller","gene1","gene2","break5prime","break3prime","cov"),colnames(temp))])
+  
+  return(fusionCalls_table)
 }
 
-
 # import results from FusionCatcher
-getFCResults <- function(folder,hgnc_symbols){
+getFCResults <- function(folder,geneNamesFromAnno){
   fusioncatcher_results <- matrix(, nrow = 0, ncol = 17)
   for(s in clintable$sample){
     path_to_file <- paste0(folder,"/",s,"/final-list_candidate-fusion-genes.txt")
@@ -51,16 +48,7 @@ getFCResults <- function(folder,hgnc_symbols){
   colnames(fusioncatcher_results)[colnames(fusioncatcher_results)=="Fusion_point_for_gene_2(3end_fusion_partner)"] <- "break3prime"
   fusioncatcher_results$break5prime <- paste0("chr",fusioncatcher_results$break5prime)
   fusioncatcher_results$break3prime <- paste0("chr",fusioncatcher_results$break3prime)
-  
-  # DEPRECATED:
-  # Separate breakpoints into columns: "chr","pos"
-  #   break1 <- strsplit(fusioncatcher_results[,which(colnames(fusioncatcher_results)=="Fusion_point_for_gene_1(5end_fusion_partner)")],":")
-  #   break2 <- strsplit(fusioncatcher_results[,which(colnames(fusioncatcher_results)=="Fusion_point_for_gene_2(3end_fusion_partner)")],":")
-  #   fusioncatcher_results$chr1 <- unlist(lapply(break1,function(x) x[1]))
-  #   fusioncatcher_results$chr2 <- unlist(lapply(break2,function(x) x[1]))
-  #   fusioncatcher_results$pos1 <- unlist(lapply(break1,function(x) x[2]))
-  #   fusioncatcher_results$pos2 <- unlist(lapply(break2,function(x) x[2]))
-  
+
   # Make gene names consistent between FusionCatcher and Arriba
     temp1 <- ensemblIDToSymbol(fusioncatcher_results$gene_id1,geneNamesFromAnno)
     temp2 <- ensemblIDToSymbol(fusioncatcher_results$gene_id2,geneNamesFromAnno)
@@ -73,12 +61,13 @@ getFCResults <- function(folder,hgnc_symbols){
     fusioncatcher_results$gene2 <- temp2
     
   fusioncatcher_results$cov <- fusioncatcher_results$Spanning_pairs+fusioncatcher_results$Spanning_unique_reads
-
+  fusioncatcher_results$caller <- "FC"
+  fusioncatcher_results$cohort <- clintable$cohort[match(fusioncatcher_results$sample,clintable$sample)]
   return(fusioncatcher_results)
 }
 
 # import results from Arriba
-getARResults <- function(folder,hgnc_symbols){
+getARResults <- function(folder){
   arriba_results <- matrix(, nrow = 0, ncol = 31)
   for(s in clintable$sample){
     path_to_file <- paste0(folder,"/",s,"/fusions.tsv")
@@ -115,39 +104,28 @@ getARResults <- function(folder,hgnc_symbols){
     arriba_results$break5prime <- paste0(arriba_results$break5prime,":",strands5prime)
     arriba_results$break3prime <- paste0(arriba_results$break3prime,":",strands3prime)
     
-  # DEPRECATED 
-  # Separate breakpoints into columns: "chr","pos"
-  #   break1 <- strsplit(arriba_results[,which(colnames(arriba_results)=="breakpoint1")],":")
-  #   break2 <- strsplit(arriba_results[,which(colnames(arriba_results)=="breakpoint2")],":")
-  #   arriba_results$chr1 <- gsub("chr","",unlist(lapply(break1,function(x) x[1])))
-  #   arriba_results$chr2 <- gsub("chr","",unlist(lapply(break2,function(x) x[1])))
-  #   arriba_results$pos1 <- unlist(lapply(break1,function(x) x[2]))
-  #   arriba_results$pos2 <- unlist(lapply(break2,function(x) x[2]))
-
   arriba_results$cov <- arriba_results$split_reads1+arriba_results$split_reads2+arriba_results$discordant_mates
+  arriba_results$caller <- "AR"
+  arriba_results$cohort <- clintable$cohort[match(arriba_results$sample,clintable$sample)]
   
   return(arriba_results)
 }
 
+# ENSEMBL ID to HGNC Symbol conversion for GENCODE annotation
+ensemblIDToSymbol <- function(l,ens_symbols){
+  tmpEnsIds <- gsub("\\.\\d+","",l)
+  ens_symbols[,1] <- gsub("\\.\\d+","",ens_symbols[,1])
+  gene_match <- match(tmpEnsIds,ens_symbols[,1])
+  hgncIds <- ens_symbols[gene_match,2]
+  return(hgncIds)
+}
+
 # IMPORT RESULTS FROM FUSION CALLERS
 cat("  ",yellow("->")," Import fusion calls...",sep="")
-  # Arriba
     folder <- paste0(outputfolder,"/arriba/")
-    AR_results <- getARResults(folder,hgnc_symbols)
-
-  # FusionCatcher
+    AR_results <- getARResults(folder)
+    
     folder <- paste0(outputfolder,"/fusioncatcher/")
-    FC_results <- getFCResults(folder,hgnc_symbols)
-
-  #reduce table to the isoforms of the fusions with the highest coverage  
-    # AR_results <- AR_results[order(AR_results$cov,decreasing = T),]
-    # AR_results <- AR_results[!duplicated(AR_results[,c("sample","gene1","gene2")]),]
-    # 
-    # FC_results <- FC_results[order(FC_results$cov,decreasing = T),]
-    # FC_results <- FC_results[!duplicated(FC_results[,c("sample","gene1","gene2")]),]
-  
-  # Assign cohort info to samples using information from clinical table
-    AR_results$cohort <- clintable$cohort[match(AR_results$sample,clintable$sample)]
-    FC_results$cohort <- clintable$cohort[match(FC_results$sample,clintable$sample)]
+    FC_results <- getFCResults(folder,geneNamesFromAnno)
 cat(" ", green("\u2713"),"\n",sep="")
 #------------------------------------------------------------------------------------------------------------
