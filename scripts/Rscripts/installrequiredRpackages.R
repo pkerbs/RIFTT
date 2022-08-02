@@ -7,8 +7,8 @@
 list.of.packages <- c("openxlsx","dplyr","stringr",
                       "ggplot2","grid","plotly","crayon",
                       "htmlwidgets","scales","withr",
-                      "data.table","ComplexHeatmap")
-bioconductor.packages <- c("Rsubread")
+                      "data.table","BiocManager")
+bioconductor.packages <- c("Rsubread","ComplexHeatmap")
 # General packages
 new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
 for(n in new.packages){
