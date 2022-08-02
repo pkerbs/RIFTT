@@ -24,6 +24,8 @@ reformatMitelman <- function(folder){
                                                   "|t(8;12)(p12;p11)")
   mbca$karyo[mbca$fusion=="BCR::FGFR1"] <- paste0(mbca$karyo[mbca$fusion=="BCR::FGFR1"],
                                                       "|t(8;22)(p11.2;q11.2)")
+  mbca$karyo[mbca$fusion=="PML::RARA"] <- paste0(mbca$karyo[mbca$fusion=="PML::RARA"],
+                                                  "|t(15;17)(q22;q21)")
   
   
   exceptions <- c("KMT2A::MLLT1","KMT2A::ELL")
