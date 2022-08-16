@@ -40,7 +40,7 @@ fts_violinplot <- function(rt,outfile){
   require(ggplot2)
   marg <- margin(2,2,2,2,"mm")
   
-  tfp <- rt
+  tfp <- rt[which(rt$passFTS & rt$passBL),]
 
   p <- ggplot(tfp,aes(known,FTS,fill=known)) +
     geom_violin(lwd=0.2,alpha=0.5) +
