@@ -107,8 +107,9 @@
 # INSERT INFO ABOUT KNOWN FUSION  
   cat("  ",yellow("->")," Identify known fusions and reciprocal events...",sep="")
   resultTable$known <- "unknown"
-  chimerdb_known <- c(subset(chimerkb,Fusion_pair %in% chimerpub$Fusion_pair)$Fusion_pair,
-                      subset(chimerpub,rec>1)$Fusion_pair)
+  chimerdb_known <- c(subset(chimerpub, rec > 1 & grepl("PCR|sanger",val,ignore.case = T))$Fusion_pair,
+                      subset(chimerkb, rec > 1 & grepl("PCR|sanger",val,ignore.case = T))$Fusion_pair)
+  chimerdb_known <- unique(chimerdb_known)
   resultTable$known[resultTable$label %in% chimerdb_known
                     | resultTable$reciproc_label %in% chimerdb_known] <- "known"
   

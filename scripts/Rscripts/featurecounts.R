@@ -12,10 +12,10 @@ library(withr)
   bampath <- paste0(outputfolder,"/mapping/",sample,"/",sample,".bam")
   tempdir <- paste0(outputfolder,"/mapping/",sample,"/")
   outfile <- paste0(outputfolder,"/featurecounts/",sample,"_counts.RDS")
-  offset <- 5
 
-# Breakpoint positions are used to collect coverage near breakpoints (required for FTS)
-# 5 bases offset from breakpoint
+# Breakpoint positions are used to collect coverage near the breakpoints (required for FTS)
+# Offset from the breakpoint is 10 bases
+  offset <- 10
   regions <- data.frame(GeneID=character(),Chr=character(),Start=numeric(),End=numeric(),Strand=character())
 
   # FusionCatcher calls
@@ -102,9 +102,9 @@ library(withr)
       quit(save="no")
     }
   
-  temp <- with_output_sink("/dev/null", featureCounts(files = bampath, annot.ext = regions, isPairedEnd = T, ignoreDup = T, 
-                                                      useMetaFeatures = F, allowMultiOverlap = T, countChimericFragments = F, 
-                                                      nthreads = threads, tmpDir = tempdir))
+  temp <- with_output_sink("/dev/null", featureCounts(files = bampath, annot.ext = regions, isPairedEnd = T, countReadPairs = T, 
+                                                      ignoreDup = T, useMetaFeatures = F, allowMultiOverlap = T, 
+                                                      countChimericFragments = F, nthreads = threads, tmpDir = tempdir))
   
   counts <- list()
   idx5 <- grepl("_5",rownames(temp$counts))
@@ -115,7 +115,7 @@ library(withr)
   names(counts[["break3prime"]]) <- gsub("_3","",rownames(temp$counts)[idx3])  
   
   temp <- with_output_sink("/dev/null", featureCounts(files = bampath, annot.ext = annofile, isGTFAnnotationFile = T, 
-                                                      isPairedEnd = T, ignoreDup = T, useMetaFeatures = T, 
+                                                      isPairedEnd = T, countReadPairs = T, ignoreDup = T, useMetaFeatures = T, 
                                                       largestOverlap = T, primaryOnly = T, countChimericFragments = T, 
                                                       GTF.featureType = c("exon","CDS","UTR"), nthreads = threads, 
                                                       tmpDir = tempdir))
