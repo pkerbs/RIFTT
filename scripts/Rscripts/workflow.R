@@ -321,6 +321,11 @@
   cat(" ",green("\u2713"),"\n",sep="")
 #------------------------------------------------------------------------------------------------------------
 
+# PRESENCE OF FUSION IN DATABASE (ChimerDB)
+    resultTable$ev_level[resultTable$known == 'known'] <- resultTable$ev_level[resultTable$known == 'known'] + 1
+
+#------------------------------------------------------------------------------------------------------------
+
 # OUTPUT RESULTS AND PLOTS
   cat("  ",yellow("->")," Write result table...",sep="")
   resultTable$passBL <- F
@@ -332,12 +337,12 @@
   resultTable$passRS <- F
   resultTable$passRS[RSpassIdx] <- T
   colOrder <- c("cohort","sample","caller","gene1","gene2","label","reciprocal",
-                "break5prime","break3prime","cov","known","mitelman_rec","PS",
-                "tpm5prime","tpm3prime","tpmfusion","FTS5","FTS3","FTS","RS","ev_level",
+                "break5prime","break3prime","cov","mitelman_rec","PS",
+                "tpm5prime","tpm3prime","tpmfusion","FTS5","FTS3","FTS","RS","ev_level", "known",
                 "passCallFilt","passBL","passPS","passFTS","passRS","callerOverlap","karyo","mol")
   colOrderIdx <- match(colOrder,colnames(resultTable))
   resultTable <- resultTable[,colOrderIdx]
-  rowOrderIdx <- order(resultTable$known,-resultTable$ev_level)
+  rowOrderIdx <- order(-resultTable$ev_level,resultTable$known,resultTable$sample,resultTable$label)
   resultTable <- resultTable[rowOrderIdx,]
   
   # Fusion events are often reported several times (e.g. with different breakpoints)
@@ -358,24 +363,21 @@
     
     saveWidget(create_TPM_FTS_plotly(resultTable),paste0(resultfolder,"/plots/TPM-FTS_3D_plot.html"))
     
+    # Circos plot for all known high evidence fusions and recurrent unknown fusions
     invisible(oncoprint(paste0(resultfolder,"/plots/Oncoprint_Karyo_MDx_RNAseq.png")))
+    
+    # Identify high evidence fusions
+    rt <- subset(resultTable,
+                            ev_level >= 6 &
+                            reciprocal == FALSE)
 
     for(ch in unique(resultTable$cohort)){
-      rt <- subset(resultTable,known=="known"
-                   & ev_level %in% c(3:6)
-                   & cohort==ch
-                   & reciprocal==F)
-      if(nrow(rt)==0){
-        cat("\n    ",yellow("->")," There are no known fusions in the '",ch,"' cohort. Circos plot skipped.",sep="")
-      } else{circosPlotsCandidates(rt)}
-      
-      rt <- subset(resultTable,known=="unknown"
-                   & ev_level %in% c(6)
-                   & cohort==ch
-                   & reciprocal==F)
-      if(nrow(rt)==0){
-        cat("\n    ",yellow("->")," There are no robust fusion candidates in the '",ch,"' cohort. Circos plot skipped.",sep="")
-      } else{circosPlotsCandidates(rt)}
+      rt_cohort <- subset(rt, cohort == ch)
+      if(nrow(rt_cohort) == 0){
+        cat("\n    ",yellow("->")," There are no high evidence fusions in the '",ch,"' cohort. Circos plot skipped.",sep="")
+      } else{
+        circosPlotsCandidates(rt_cohort)
+      }
     }
     
   cat(" ",green("\u2713"),"\n",sep="")

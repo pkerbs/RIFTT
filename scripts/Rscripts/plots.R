@@ -14,7 +14,7 @@ ps_violinplot <- function(rt,outfile){
                  alpha=0.5, show.legend = F) +
     theme_minimal() +
     facet_wrap(~cohort,nrow = 1,strip.position = "bottom") +
-    theme(legend.position = c(0.2/(num_cohorts-0.999),0.97),
+    theme(legend.position.inside = c(0.2/(num_cohorts-0.999),0.97),
           legend.key.size = unit(0.5,"line"),
           legend.text = element_text(size = 6),
           legend.title = element_text(size = 6, face="bold"),
@@ -40,14 +40,14 @@ fts_violinplot <- function(rt,outfile){
   require(ggplot2)
   marg <- margin(2,2,2,2,"mm")
   
-  tfp <- subset(rt, passCallFilt & passBL & passFTS)
+  tfp <- subset(rt, passCallFilt & passBL)
 
   p <- ggplot(tfp,aes(known,FTS,fill=known)) +
     geom_violin(lwd=0.2,alpha=0.5) +
     geom_boxplot(lwd=0.2,width=0.1,outlier.shape = NA,
                  alpha=0.5, show.legend = F) +
     theme_minimal() +
-    theme(legend.position = c(0.2,0.97),
+    theme(legend.position.inside = c(0.2,0.97),
           legend.key.size = unit(0.5,"line"),
           legend.text = element_text(size = 6),
           legend.title = element_text(size = 6, face="bold"),
@@ -181,7 +181,7 @@ create_TPM_FTS_ggplot <- function(rt,max_x,max_y,flabels){
           panel.border = element_blank(),
           axis.line = element_line(),
           legend.justification = c("right","top"),
-          legend.position = c(0.99,0.98),
+          legend.position.inside = c(0.99,0.98),
           legend.box.just = "right",
           legend.spacing = unit(2,"char"),
           legend.background = element_rect(fill="white",color = "black", size = 0.2),
@@ -244,25 +244,13 @@ create_TPM_FTS_plotly <- function(rt){
 
 # Oncoprint
 oncoprint <- function(outfile){
-  if(all(is.na(clintable$Karyotype) | clintable$Karyotype == "") 
-     | all(is.na(clintable$otherCyto) | clintable$otherCyto == "")){
-    cat("\n    ",yellow("->")," No karyotype / molecular diagnostics information in clinical table. Oncoprint will be skipped.",sep="")
-    return()
-  }
-  
   # Reduce mitelman table to 'known' fusion genes by means of ChimerDB
   # If ISCN karyo of fusion gene matches other fusion genes in database
   # Reduce Mitelman table to fusion genes with the highest recurrence
-  mitelman_reduced <- mitelman[mitelman$fusion %in% chimerdb_known,]
-  # idx <- apply(mitelman_reduced, 1, function(x){
-  #   mitelman_redundance_idx <- which(grepl(x['karyogrep'],mitelman_reduced$karyo))
-  #   temp_idx <- which.max(mitelman_reduced$rec[mitelman_redundance_idx])
-  #   mitelman_redundance_idx[temp_idx]
-  # })
-  # mitelman_reduced <- mitelman_reduced[idx,]
+  mitelman_known <- mitelman[mitelman$fusion %in% chimerdb_known,]
   
   # Check karyotypes in clinical table for occurence of aberrations reported to result in known fusion genes
-  idx <- apply(mitelman_reduced, 1, function(x){
+  idx <- apply(mitelman_known, 1, function(x){
     temp_idx <- which(grepl(x['karyogrep'], clintable$Karyotype, ignore.case = T))
     if(length(temp_idx) > 0){
       data.frame(sample=clintable$sample[temp_idx], 
@@ -275,7 +263,7 @@ oncoprint <- function(outfile){
     karyo_search <- do.call(rbind,idx)
     karyo_search$karyo <- 6  
   }
-  idx_sloppy <- apply(mitelman_reduced, 1, function(x){
+  idx_sloppy <- apply(mitelman_known, 1, function(x){
     temp_idx <- which(grepl(x['karyogrep_sloppy'], clintable$Karyotype, ignore.case = T))
     if(length(temp_idx) > 0){
       data.frame(sample=clintable$sample[temp_idx], 
@@ -293,8 +281,8 @@ oncoprint <- function(outfile){
     distinct(sample, fusion, .keep_all = T)
   
   # Check MDx in clinical table for reported known fusion genes
-  idx <- apply(mitelman_reduced, 1, function(x){
-    pattern <- paste0(x['fusion'],"\\s*[$,]*")
+  idx <- apply(mitelman_known, 1, function(x){
+    pattern <- paste0("\\b", x['fusion'], "\\b")
     temp_idx <- which(grepl(pattern, clintable$otherCyto, ignore.case = T))
     if(length(temp_idx) > 0){
       data.frame(sample=clintable$sample[temp_idx], 
@@ -307,7 +295,7 @@ oncoprint <- function(outfile){
     mol_search <- do.call(rbind,idx)
     mol_search$mol <- 6
   }
-  idx_sloppy <- apply(mitelman_reduced, 1, function(x){
+  idx_sloppy <- apply(mitelman_known, 1, function(x){
     fusion <- unlist(strsplit(x['fusion'],"::"))
     temp_idx <- which(grepl(paste0(fusion[1],"#"), clintable$otherCyto, ignore.case = T)
                       | grepl(paste0(fusion[2],"#"), clintable$otherCyto, ignore.case = T))
@@ -327,7 +315,7 @@ oncoprint <- function(outfile){
     distinct(sample, fusion, .keep_all = T)
 
   # Check RNA-seq for reported known fusion genes
-  idx <- apply(mitelman_reduced, 1, function(x){
+  idx <- apply(mitelman_known, 1, function(x){
     pattern <- paste0(x['fusion'],"$")
     temp_idx <- which(grepl(pattern, resultTable$label, ignore.case = T))
     temp_idx <- c(temp_idx,which(grepl(pattern, resultTable$reciproc_label, ignore.case = T)))
@@ -344,20 +332,131 @@ oncoprint <- function(outfile){
     rna_search <- rna_search[order(rna_search$rna,decreasing = T),]
     rna_search <- rna_search[!duplicated(rna_search[,c("sample","fusion","cohort")]),] 
   }
+
+  karyo_search_known <- karyo_search
+  mol_search_known <- mol_search
+  rna_search_known <- rna_search
+
+  # Reduce mitelman table to 'unknown' fusion genes by means of ChimerDB
+  # If ISCN karyo of fusion gene matches other fusion genes in database
+  mitelman_unknown <- mitelman[!mitelman$fusion %in% chimerdb_known, ]
   
-  # Pre-processing of onco table for Oncoprint
-  onco_matrix_long <- merge(karyo_search, mol_search, by=c("sample","fusion","cohort"),all = T)
-  onco_matrix_long <- merge(onco_matrix_long, rna_search, by=c("sample","fusion","cohort"),all = T)
-  onco_matrix_long[is.na(onco_matrix_long)] <- 0
-  onco_matrix_long <- subset(onco_matrix_long, (karyo==6 & (mol>=3 | rna>=3))
-                             | (mol==6 & (karyo>=3 | rna>= 3))
-                             | (rna==6 & (karyo>=3 | mol>=3)))
+  # Check karyotypes in clinical table for occurence of aberrations reported to result in known fusion genes
+  idx <- apply(mitelman_unknown, 1, function(x){
+    temp_idx <- which(grepl(x['karyogrep'], clintable$Karyotype, ignore.case = T))
+    if(length(temp_idx) > 0){
+      data.frame(sample=clintable$sample[temp_idx], 
+                 fusion=rep(x['fusion'],length(temp_idx)), 
+                 cohort=rep(clintable$cohort[temp_idx],length(temp_idx)))
+    }
+  })
+  karyo_search <- data.frame(sample=character(),fusion=character(),cohort=character(),karyo=numeric(),stringsAsFactors = F)
+  if(!is.null(idx)){
+    karyo_search <- do.call(rbind,idx)
+    karyo_search$karyo <- 6  
+  }
+  idx_sloppy <- apply(mitelman_unknown, 1, function(x){
+    temp_idx <- which(grepl(x['karyogrep_sloppy'], clintable$Karyotype, ignore.case = T))
+    if(length(temp_idx) > 0){
+      data.frame(sample=clintable$sample[temp_idx], 
+                 fusion=rep(x['fusion'],length(temp_idx)), 
+                 cohort=rep(clintable$cohort[temp_idx],length(temp_idx)))
+    }
+  })
+  karyo_search_sloppy <- data.frame(sample=character(),fusion=character(),cohort=character(),karyo=numeric(),stringsAsFactors = F)
+  if(!is.null(idx_sloppy)){
+    karyo_search_sloppy <- do.call(rbind,idx_sloppy)
+    karyo_search_sloppy$karyo <- 3  
+  }
+  karyo_search <- rbind(karyo_search,karyo_search_sloppy)
+  karyo_search <- karyo_search %>%
+    distinct(sample, fusion, .keep_all = T)
   
+  # Check MDx in clinical table for reported known fusion genes
+  idx <- apply(mitelman_unknown, 1, function(x){
+    pattern <- paste0(x['fusion'],"\\s*[$,]*")
+    temp_idx <- which(grepl(pattern, clintable$otherCyto, ignore.case = T))
+    if(length(temp_idx) > 0){
+      data.frame(sample=clintable$sample[temp_idx], 
+                 fusion=rep(x['fusion'],length(temp_idx)), 
+                 cohort=rep(clintable$cohort[temp_idx],length(temp_idx)))
+    }
+  })
+  mol_search <- data.frame(sample=character(),fusion=character(),cohort=character(),mol=numeric(),stringsAsFactors = F)
+  if(!is.null(idx)){
+    mol_search <- do.call(rbind,idx)
+    mol_search$mol <- 6
+  }
+  idx_sloppy <- apply(mitelman_unknown, 1, function(x){
+    fusion <- unlist(strsplit(x['fusion'],"::"))
+    temp_idx <- which(grepl(paste0(fusion[1],"#"), clintable$otherCyto, ignore.case = T)
+                      | grepl(paste0(fusion[2],"#"), clintable$otherCyto, ignore.case = T))
+    if(length(temp_idx) > 0){
+      data.frame(sample=clintable$sample[temp_idx], 
+                 fusion=rep(x['fusion'],length(temp_idx)), 
+                 cohort=rep(clintable$cohort[temp_idx],length(temp_idx)))
+    }
+  })
+  mol_search_sloppy <- data.frame(sample=character(),fusion=character(),cohort=character(),mol=numeric(),stringsAsFactors = F)
+  if(!is.null(idx_sloppy)){
+    mol_search_sloppy <- do.call(rbind,idx_sloppy)
+    mol_search_sloppy$mol <- 3
+  }
+  mol_search <- rbind(mol_search,mol_search_sloppy)
+  mol_search <- mol_search %>%
+    distinct(sample, fusion, .keep_all = T)
+
+  # Check RNA-seq for reported known fusion genes
+  idx <- apply(mitelman_unknown, 1, function(x){
+    pattern <- paste0(x['fusion'],"$")
+    temp_idx <- which(grepl(pattern, resultTable$label, ignore.case = T))
+    temp_idx <- c(temp_idx,which(grepl(pattern, resultTable$reciproc_label, ignore.case = T)))
+    if(length(temp_idx) > 0){
+      data.frame(sample=resultTable$sample[temp_idx], 
+                 fusion=rep(x['fusion'],length(temp_idx)), 
+                 cohort=rep(resultTable$cohort[temp_idx],length(temp_idx)), 
+                 rna=resultTable$ev_level[temp_idx])
+    }
+  })
+  rna_search <- data.frame(sample=character(),fusion=character(),cohort=character(),rna=numeric(),stringsAsFactors = F)
+  if(!is.null(idx)){
+    rna_search <- do.call(rbind,idx)
+    rna_search <- rna_search[order(rna_search$rna,decreasing = T),]
+    rna_search <- rna_search[!duplicated(rna_search[,c("sample","fusion","cohort")]),] 
+  }
+
+  karyo_search_unknown <- karyo_search
+  mol_search_unknown <- mol_search
+  rna_search_unknown <- rna_search
+
+  # Pre-processing of known onco table for Oncoprint
+  onco_matrix_long_known <- merge(karyo_search_known, mol_search_known, by=c("sample","fusion","cohort"),all = T)
+  onco_matrix_long_known <- merge(onco_matrix_long_known, rna_search_known, by=c("sample","fusion","cohort"),all = T)
+  onco_matrix_long_known[is.na(onco_matrix_long_known)] <- 0
+  onco_matrix_long_known <- subset(onco_matrix_long_known, (karyo==6 | mol==6| rna>=6))
+
   # Sorting table for oncoprint
-  onco_matrix_long$score <- onco_matrix_long$karyo + onco_matrix_long$mol + onco_matrix_long$rna
-  onco_matrix_long  <- onco_matrix_long %>%
+  onco_matrix_long_known$score <- onco_matrix_long_known$karyo + onco_matrix_long_known$mol + onco_matrix_long_known$rna
+  onco_matrix_long_known  <- onco_matrix_long_known %>%
+    dplyr::group_by(fusion) %>%
+    dplyr::mutate(rec=n())  
+
+  # Pre-processing of unknown onco table for Oncoprint
+  onco_matrix_long_unknown <- merge(karyo_search_unknown, mol_search_unknown, by=c("sample","fusion","cohort"),all = T)
+  onco_matrix_long_unknown <- merge(onco_matrix_long_unknown, rna_search_unknown, by=c("sample","fusion","cohort"),all = T)
+  onco_matrix_long_unknown[is.na(onco_matrix_long_unknown)] <- 0
+  onco_matrix_long_unknown <- subset(onco_matrix_long_unknown, (karyo==6 | mol==6| rna>=6))
+
+  # Sorting table for oncoprint
+  onco_matrix_long_unknown$score <- onco_matrix_long_unknown$karyo + onco_matrix_long_unknown$mol + onco_matrix_long_unknown$rna
+  onco_matrix_long_unknown  <- onco_matrix_long_unknown %>%
     dplyr::group_by(fusion) %>%
     dplyr::mutate(rec=n()) 
+
+  onco_matrix_long_unknown <- onco_matrix_long_unknown %>% dplyr::filter(rec > 1)
+  onco_matrix_long <- bind_rows(onco_matrix_long_known, onco_matrix_long_unknown)
+
+
   temp <- onco_matrix_long %>%
     dplyr::arrange(desc(rec),fusion,desc(score),desc(karyo),desc(mol),desc(rna),cohort) %>%
     dplyr::select(sample,fusion)
@@ -393,8 +492,8 @@ oncoprint <- function(outfile){
   row_labels <- factor(row_labels,levels=c("Karyotyping","MDx","RNA-seq"))
   
   # Initializing Heatmap
-  colors <- structure(c("grey","#edf8e9","#c7e9c0","#a1d99b","#74c476","#31a354","#006d2c"),
-                      names=c("0","1","2","3","4","5","6"))
+  colors <- structure(c("grey","#edf8e9","#c7e9c0","#a1d99b","#74c476","#31a354","#006d2c","#006d2c"),
+                      names=c("0","1","2","3","4","5","6","7"))
   
   num_cohorts <- length(unique(cohort_labels))
   cohort_cols <- RColorBrewer::brewer.pal(max(3,num_cohorts),"Set1")[1:num_cohorts]
@@ -404,6 +503,7 @@ oncoprint <- function(outfile){
   title_param <- gpar(fontsize=18,col="black",fontface="bold")
   legend_param <- list(grid_height=unit(5,"mm"),grid_width=unit(5,"mm"),
                        title_gp=title_param,labels_gp=text_param)
+  fusion_colors <- ifelse(fus_anno %in% chimerdb_known, "black", "darkgrey")
   
   # Generate Heatmap
   p <- Heatmap(as.matrix(onco_matrix_wide),
@@ -419,7 +519,7 @@ oncoprint <- function(outfile){
                left_annotation = rowAnnotation(Fusion=anno_block(gp = gpar(fill=NULL,
                                                                            col=NA),
                                                                  labels = fus_anno,
-                                                                 labels_gp = gpar(fontsize=16,col="black"),
+                                                                 labels_gp = gpar(fontsize = 16, col = fusion_colors),
                                                                  labels_rot = 0, labels_just = "right",
                                                                  labels_offset = unit(0.95, "npc"),
                                                                  width = unit(100, "mm")),
@@ -476,7 +576,7 @@ oncoprint <- function(outfile){
     rt <- distinct(rt,sample,label,.keep_all = T)
     
     links <- rt %>%
-      select(gene1,gene2,label,break5prime,break3prime,mitelman_rec) %>%
+      select(gene1,gene2,label,break5prime,break3prime,mitelman_rec,known) %>%
       group_by(label) %>%
       mutate(rec=n()) %>%
       arrange(desc(rec)) %>%
@@ -490,53 +590,59 @@ oncoprint <- function(outfile){
     links$start2 <- temp[,2]
     links$end2 <- links$start2
     links <- links[,match(c("chr1","start1","end1",
-                            "chr2","start2","end2","rec","mitelman_rec","gene1","gene2","label"),colnames(links))]
+                            "chr2","start2","end2","rec","mitelman_rec","gene1","gene2","label","known"),colnames(links))]
     
-    # Label all genes if status=="known", otherwise label only genes involved in recurrent fusions
-      x <- 1
-      if(status=="unknown") x <- 2
-      labels <- rbind(setNames(links[links$rec>=x,match(c("chr1","start1","end1","gene1"),colnames(links))],c("chr","start","end","gene")),
-                      setNames(links[links$rec>=x,match(c("chr2","start2","end2","gene2"),colnames(links))],c("chr","start","end","gene")))
-      labels$gene <- gsub("\\(\\d+\\)","",labels$gene)
-      labels$gene <- gsub("^IGH.*","IGH",labels$gene)
-      labels$gene <- gsub("(^TR[ABCD]).*","\\1",labels$gene)
-      labels <- distinct(labels, gene, .keep_all = T)
-      
-    # Set line thickness and colors
-      links$thickness <- rescale(as.numeric(links$rec),to = c(3,30))
-      links$meta <- ""
-      for(i in 1:nrow(links)){
-        thickness <- round(links$thickness[i],digits = 0)
-        recurrence <- links$rec[i]
-        mitelman_recurrence <- links$mitelman_rec[i]
-        links$meta[i] <- paste0("thickness=",thickness)
-        if(status=="known"){
-          links$meta[i] <- paste0(links$meta[i],",color=blue_a4,z=15")
-        }
-        else{
-          if(recurrence>1){
-            if(mitelman_recurrence>0){
-              links$meta[i] <- paste0(links$meta[i],",color=green_a4,z=15")
-            }else{
-              links$meta[i] <- paste0(links$meta[i],",color=red_a4,z=20")
-            }
-          } else{
-            if(mitelman_recurrence>0){
-              links$meta[i] <- paste0(links$meta[i],",color=green_a4,z=15")
-            }
-          }
-        }
+  label_candidates <- links %>%
+    filter(
+      (known == "known") |
+      (known == "unknown" & rec > 1) 
+    )
+
+  labels <- rbind(
+    setNames(label_candidates[, c("chr1", "start1", "end1", "gene1")], c("chr", "start", "end", "gene")),
+    setNames(label_candidates[, c("chr2", "start2", "end2", "gene2")], c("chr", "start", "end", "gene"))
+  )
+
+  labels$gene <- gsub("\\(\\d+\\)", "", labels$gene)
+  labels$gene <- gsub("^IGH.*", "IGH", labels$gene)
+  labels$gene <- gsub("(^TR[ABCD]).*", "\\1", labels$gene)
+  labels <- distinct(labels, gene, .keep_all = TRUE)
+
+  links$thickness <- rescale(as.numeric(links$rec),to = c(3,30))
+  links$meta <- ""
+
+  for(i in seq_len(nrow(links))){
+    k <- links[i,]
+    thickness <- round(k$thickness)
+    
+    meta <- paste0("thickness=", thickness, ",color=grey_a3,z=5")
+    
+    if(k$known == "known") {
+      meta <- paste0("thickness=", thickness, ",color=blue_a4,z=25")
+    } else {
+      if(k$mitelman_rec > 0) {
+        meta <- paste0("thickness=", thickness, ",color=green_a3,z=15")
+      } else if(k$rec > 1) {
+        meta <- paste0("thickness=", thickness, ",color=red_a3,z=20")
       }
-      links <- links[,-match(c("thickness","rec","mitelman_rec","gene1","gene2","label"),colnames(links))]
-    
-    system(paste0("mkdir -p ",outputfolder,"/filter_results/tmp"))
-    write.table(links,paste0(outputfolder,"/filter_results/tmp/links.txt"),col.names = F,row.names = F,sep="\t",quote = F)
-    write.table(labels,paste0(outputfolder,"/filter_results/tmp/labels.txt"),col.names = F,row.names = F,sep="\t",quote = F)
-    
-    cmd <- "/tools/circos-0.69-9/bin/circos"
-    cmd <- paste0(cmd," -conf /scripts/circosPlotsConfig/circos.conf -silent")
-    cmd <- paste0(cmd," -dir ",resultfolder,"/plots -file Circosplot_",ch,"_",status,"_fusions")
-    system(cmd)
-    unlink(paste0(outputfolder,"/filter_results/tmp/"),recursive = T)
+    }
+    links$meta[i] <- meta
   }
-#-----------------------------------
+
+  links <- links[, match(c("chr1","start1","end1",
+                           "chr2","start2","end2","meta"), colnames(links))]
+
+  tmp_dir <- file.path(outputfolder, "filter_results/tmp")
+  dir.create(tmp_dir, recursive = TRUE, showWarnings = FALSE)
+
+  write.table(links, file.path(tmp_dir, "links.txt"), col.names = FALSE, row.names = FALSE, sep = "\t", quote = FALSE)
+  write.table(labels, file.path(tmp_dir, "labels.txt"), col.names = FALSE, row.names = FALSE, sep = "\t", quote = FALSE)
+
+  cmd <- "/tools/circos-0.69-9/bin/circos"
+  cmd <- paste0(cmd, " -conf /scripts/circosPlotsConfig/circos.conf -silent")
+  cmd <- paste0(cmd, " -dir ", resultfolder, "/plots -file Circosplot_", ch)
+  system(cmd)
+
+  unlink(tmp_dir, recursive = TRUE)
+}
+#-----------------------------------      

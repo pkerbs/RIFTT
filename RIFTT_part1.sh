@@ -9,8 +9,8 @@
 	# Sample information
 		sample_name="$1"										# Name of sample
 		fastq_folder="$2"										# Folder of fastq files. Forward/Reverse read files will be searched by sample_name
-		read1=`find "$fastq_folder" -name "$sample_name"*R1*`	# First read (automatic detection)
-		read2=`find "$fastq_folder" -name "$sample_name"*R2*`	# Second read (automatic detection)
+		read1=`find "$fastq_folder" -maxdepth 1 -name "$sample_name"*R1.fastq.gz`	# First read (automatic detection)
+		read2=`find "$fastq_folder" -maxdepth 1 -name "$sample_name"*R2.fastq.gz`	# Second read (automatic detection)
 		strandness=0											# [0 -> unstranded, 1 -> stranded, 2 -> reversely stranded]
 
 	# Reference files
