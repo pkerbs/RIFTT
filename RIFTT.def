@@ -16,6 +16,8 @@ Include: apt
 	touch /blacklist_user.xlsx
 	
 	apt-get install -y apt-utils
+	apt-get install -y ca-certificates
+	update-ca-certificates
 	apt-get install -y locales
 	locale-gen en_US.UTF-8
 	export LANG=en_US.UTF-8
@@ -117,36 +119,29 @@ Include: apt
 	rm bbmap.tar.gz
 	sed -i 's/38.44/38.96/g' /tools/fusioncatcher-1.33/bin/fusioncatcher.py
 	
-	wget -O blat.zip https://users.soe.ucsc.edu/~kent/src/blatSrc35.zip
-	unzip blat.zip
-	rm blat.zip
-	
-	MACHTYPE=x86_64
-	export MACHTYPE
-	mkdir /home/bin
-	mkdir /home/bin/$MACHTYPE
+	# BLAT (FusionCatcher's blat aligner): 
+	# v35 binaries from vendor/blat/ (built for GNU/Linux 3.2.0)
 	mkdir /tools/blat
-	HOME=/home
-	export HOME
-	cd blatSrc
-	make
-	mv /home/bin/$MACHTYPE/* /tools/blat
-	cd ..
-	rm -Rf /tools/blatSrc
-	wget http://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/liftOver
-	chmod +x liftOver
-	mv liftOver /tools/blat
-		
+	cp /vendor/blat/* /tools/blat/
+	chmod +x /tools/blat/*
+	# liftOver is glibc-compatible and fetched directly (public, pinned).
+	# --no-check-certificate: hgdownload uses an InCommon CA the base image lacks.
+	wget --no-check-certificate -O /tools/blat/liftOver "https://hgdownload.soe.ucsc.edu/admin/exe/linux.x86_64/liftOver"
+	chmod +x /tools/blat/liftOver
+
 	wget http://opengene.org/fastp/fastp.0.23.1
 	chmod a+x ./fastp.0.23.1
 	
-	wget -O circos.tgz http://circos.ca/distribution/circos-0.69-9.tgz
+	wget --no-check-certificate -O circos.tgz https://circos.ca/distribution/circos-0.69-9.tgz
 	tar xzf circos.tgz
 	chmod +x circos-0.69-9/bin/circos*
 	rm circos.tgz
-	
+
+	rm -rf /vendor
+
 %files
 	./scripts /
+	./vendor /
 
 %environment
 	

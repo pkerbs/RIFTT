@@ -1,40 +1,33 @@
 #!/bin/bash
+# RIFTT Part 1 - fusion detection for a single sample.
+# Usage:  ./RIFTT_part1.sh <sample_name> <fastq_folder>
+# Configuration is read from config/params.conf (copy config/params.conf.example).
+set -euo pipefail
 
-# REQUIRED PARAMETERS
-	# General
-		threads=16			# Number of threads to run the tools of the pipeline
-		outputfolder=""		# Common folder for the output of the pipeline
-		genomebuild="hg38"	# ["hg19", "hg38"]
-	
-	# Sample information
-		sample_name="$1"										# Name of sample
-		fastq_folder="$2"										# Folder of fastq files. Forward/Reverse read files will be searched by sample_name
-		read1=`find "$fastq_folder" -maxdepth 1 -name "$sample_name"*R1.fastq.gz`	# First read (automatic detection)
-		read2=`find "$fastq_folder" -maxdepth 1 -name "$sample_name"*R2.fastq.gz`	# Second read (automatic detection)
-		strandness=0											# [0 -> unstranded, 1 -> stranded, 2 -> reversely stranded]
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG="${RIFTT_CONFIG:-$HERE/config/params.conf}"
+SIF="${RIFTT_SIF:-$HERE/RIFTT.sif}"
 
-	# Reference files
-		ref=""			# Genome reference file (Fasta)
-		anno=""			# Genome annotation file (GENCODE)
-		starindex=""	# Index folder for STAR
-		fcdata=""		# Data folder for FusionCatcher
-	
-	# Steps to perform
-		FusionCatcher=1		# Fusion calling by FusionCatcher
-		FastP=1				# Read trimming before STAR mapping
-		STAR=1				# Mapping by STAR
-		Arriba=1			# Fusion calling by Arriba
-		FeatureCounts=1		# Read counting
-		Picard=1 			# Insert size estimation
-#---------------------------------------------------------
+[[ -f "$CONFIG" ]] || { echo "ERROR: config not found: $CONFIG"; echo "  cp config/params.conf.example config/params.conf  and edit it."; exit 1; }
+[[ -f "$SIF" ]]    || { echo "ERROR: container not found: $SIF (build it or set RIFTT_SIF)"; exit 1; }
+# shellcheck disable=SC1090
+source "$CONFIG"
 
-#(DO NOT EDIT THIS SECTION)
-tasks="$FusionCatcher $FastP $STAR $Arriba $FeatureCounts $Picard"
-cmd="singularity run"
-cmd+=" --bind $ref:/genome.fa,$anno:/anno.gtf,$starindex:/star_index,$fcdata:/fcdata"
-cmd+=",$outputfolder:/outputfolder,$read1:/read1.fastq.gz,$read2:/read2.fastq.gz"
-cmd+=" --env sample_name=$sample_name,strandness=$strandness"
-cmd+=",threads=$threads,genomebuild=$genomebuild,tasks='$tasks'"
-cmd+=" RIFTT.sif"
-eval $cmd
-#---------------------------------------------------------
+sample_name="${1:?usage: RIFTT_part1.sh <sample_name> <fastq_folder>}"
+fastq_folder="${2:?usage: RIFTT_part1.sh <sample_name> <fastq_folder>}"
+read1=$(find "$fastq_folder" -maxdepth 1 -name "${sample_name}*R1.fastq.gz" | head -1)
+read2=$(find "$fastq_folder" -maxdepth 1 -name "${sample_name}*R2.fastq.gz" | head -1)
+[[ -f "$read1" && -f "$read2" ]] || { echo "ERROR: could not find ${sample_name}*R1/R2.fastq.gz in $fastq_folder"; exit 1; }
+
+for v in REF ANNO STARINDEX FCDATA OUTPUTFOLDER; do
+  [[ -n "${!v:-}" ]] || { echo "ERROR: $v is not set in $CONFIG"; exit 1; }
+done
+mkdir -p "$OUTPUTFOLDER"
+
+tasks="$STEP_FUSIONCATCHER $STEP_FASTP $STEP_STAR $STEP_ARRIBA $STEP_FEATURECOUNTS $STEP_PICARD"
+
+singularity run \
+  --bind "$REF:/genome.fa,$ANNO:/anno.gtf,$STARINDEX:/star_index,$FCDATA:/fcdata,$OUTPUTFOLDER:/outputfolder,$read1:/read1.fastq.gz,$read2:/read2.fastq.gz" \
+  --env "sample_name=$sample_name,strandness=$STRANDNESS,threads=$THREADS,genomebuild=$GENOMEBUILD" \
+  --env "tasks=$tasks" \
+  "$SIF"

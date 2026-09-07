@@ -1,0 +1,36 @@
+# RIFTT configuration file
+# ------------------------------------------------------------------------------
+# Copy this file to  config/params.conf  and edit the values, then run:
+#   ./RIFTT_part1.sh <sample_name> <fastq_folder>     # once per sample
+#   ./RIFTT_part2.sh                                  # once, over the whole cohort
+#
+# All paths must be absolute.
+# ------------------------------------------------------------------------------
+
+## General
+THREADS=16                 # threads for the pipeline tools (Part 2: use an even number)
+GENOMEBUILD=hg38           # hg19 | hg38
+STRANDNESS=0               # 0 unstranded | 1 stranded | 2 reversely stranded
+
+## Reference files (Part 1; ANNO is also required by Part 2)
+REF=                       # genome reference FASTA (GENCODE)
+ANNO=                      # gene annotation GTF (GENCODE, same as used for the STAR index)
+STARINDEX=                 # STAR index directory (built without --sjdbGTFfile / --sjdbOverhang)
+FCDATA=                    # FusionCatcher genomic database directory
+
+## Input / output
+OUTPUTFOLDER=              # pipeline output directory (Part 1 writes here, Part 2 reads it)
+CLINTABLE=                 # Part 2: clinical table .xlsx with columns
+                           #   cohort | sample | Karyotype | otherCyto   (see README)
+
+## Part 2 options
+INTERNAL_BL=1              # 1 = apply the built-in healthy-tissue blacklist, 0 = do not
+USER_BL=                   # optional: path to a custom blacklist .xlsx (first column = fusion labels)
+
+## Part 1 steps (1 = run, 0 = skip)
+STEP_FUSIONCATCHER=1
+STEP_FASTP=1
+STEP_STAR=1
+STEP_ARRIBA=1
+STEP_FEATURECOUNTS=1
+STEP_PICARD=1
