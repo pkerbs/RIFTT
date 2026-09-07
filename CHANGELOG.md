@@ -10,6 +10,7 @@
 - Expand the documentation (output table, clinical table)
 - Bundle the BLAT v35 binaries in `vendor/blat/` and fix the container
   build (CA certificates, moved download URLs)
+- Fix the circos image `radius` override so the circos plot is generated
 
 ## v1.0.0 - August 2025
 

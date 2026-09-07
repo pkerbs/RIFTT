@@ -49,5 +49,5 @@ Part 2 also needs the GENCODE v38 annotation GTF (`ANNO` in the config).
 | file                         | content                                                                                                        |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `clintable.xlsx`           | Part 2 input table for the three samples                                                                       |
-| `expected_resultTable.tsv` | the`ev_level >= 6` rows of the reference run                                                                 |
+| `expected_resultTable.tsv` | the`ev_level >= 6` calls of the reference run (identifying columns, scores and flags; raw TPM is omitted as it scales with the annotation) |
 | `part2_intermediates/`     | the Arriba / FusionCatcher / featureCounts / insert-size files Part 2 reads, to test Part 2 without alignment |

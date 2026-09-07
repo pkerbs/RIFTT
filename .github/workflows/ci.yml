@@ -11,7 +11,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Shell scripts
         run: |
           sudo apt-get update && sudo apt-get install -y shellcheck
@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 150
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Apptainer and debootstrap
         run: |
@@ -40,15 +40,7 @@ jobs:
       - name: Build the container
         run: sudo apptainer build RIFTT.sif RIFTT.def
 
-      - name: Cache the GENCODE v38 annotation
-        id: gtf
-        uses: actions/cache@v4
-        with:
-          path: gencode.v38.primary_assembly.annotation.gtf
-          key: gencode-v38-primary
-
       - name: Download the GENCODE v38 annotation
-        if: steps.gtf.outputs.cache-hit != 'true'
         run: |
           wget -q https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_38/gencode.v38.primary_assembly.annotation.gtf.gz
           gunzip gencode.v38.primary_assembly.annotation.gtf.gz
@@ -65,18 +57,31 @@ jobs:
         run: |
           pip install pandas openpyxl numpy
           python3 - <<'EOF'
-          import glob, numpy as np, pandas as pd
+          import glob, sys, numpy as np, pandas as pd
+
           rt = sorted(glob.glob("example/part2_intermediates/filter_results/run_*/resultTable.xlsx"))[-1]
           got = pd.read_excel(rt)
-          key = ["sample", "caller", "gene1", "gene2", "break5prime", "break3prime"]
           ref = pd.read_csv("example/expected_resultTable.tsv", sep="\t")
+
+          key = ["sample", "caller", "gene1", "gene2", "break5prime", "break3prime"]
           g = got[got.ev_level >= 6].sort_values(key).reset_index(drop=True)
           r = ref.sort_values(key).reset_index(drop=True)
-          assert g.shape == r.shape, f"high-evidence rows {g.shape} != {r.shape}"
-          for c in g.columns:
-              if g[c].dtype.kind in "fc":
-                  assert np.allclose(g[c], r[c], rtol=1e-6, equal_nan=True), f"column {c} differs"
-              else:
-                  assert (g[c].astype(str) == r[c].astype(str)).all(), f"column {c} differs"
-          print("OK - high-evidence result matches the reference")
+
+          if g.shape[0] != r.shape[0]:
+              sys.exit(f"high-evidence call count {g.shape[0]} != expected {r.shape[0]}")
+
+          # Categorical / integer columns must match exactly.
+          exact = ["cohort", "sample", "caller", "gene1", "gene2", "label", "reciprocal",
+                   "break5prime", "break3prime", "cov", "mitelman_rec", "ev_level", "known",
+                   "passCallFilt", "passBL", "passPS", "passFTS", "passRS", "callerOverlap"]
+          for c in exact:
+              if not (g[c].astype(str).values == r[c].astype(str).values).all():
+                  sys.exit(f"column {c} differs from the reference")
+
+          # Scores are ratios and independent of the annotation's library scaling.
+          for c in ["PS", "FTS5", "FTS3", "FTS", "RS"]:
+              if not np.allclose(g[c].astype(float), r[c].astype(float), rtol=1e-6, equal_nan=True):
+                  sys.exit(f"column {c} differs from the reference")
+
+          print("OK - high-evidence calls, scores and evidence levels match the reference")
           EOF
